@@ -518,3 +518,17 @@ P021 的诊断是错误的。`base.py` 的 `extract_media()` 用 `MEDIA_DELIVERY
 - **背景**: 用户要求子Agent产出自动落盘，可回溯到聊天。四轮方案被否后，探针实测确认 `post_tool_call` + `pre_llm_call` 双hook可行——`post` 存映射，`pre` 前缀匹配 → 落盘。实测通过（deleg_b43df161 产出已自动保存）。
 - **关联**: P029（引用确认——同一插件，同一 pre_llm_call hook）
 - **session**: 20260711_013000
+
+
+
+## P053 — Phase 5C 置信度评分引擎替换关键词 TTL（2026-07-13）
+
+- **文件**: `~/.hermes/scripts/confidence_engine.py`（新增）, `~/.hermes/config/confidence_profiles.yaml`（新增）, `~/.hermes/scripts/memory_ttl_enforce.py`（修改）
+- **改动**:
+  1. `confidence_engine.py`（180行）——四维置信度引擎：source_weight × recency_decay + bonus + verification。含 CONSTANT_SAFELIST（10条正则防恒定事实衰减）、preprocess 集中维度提取、assess_batch 批量接口、validate_profile YAML 校验。
+  2. `confidence_profiles.yaml`——memory_entry 维度配置（base_weights/recency/bonuses/thresholds/ttl_map）
+  3. `memory_ttl_enforce.py`——替换 `classify_entry` 关键词分类为 `assess()` 置信度引擎。删除死代码：TTL_DAYS/TYPE_KEYWORDS/DEFAULT_TTL_DAYS/classify_entry/PERMANENT_OVERRIDES（-60行）。新增 confidence_engine import + 新 calculate_ttl（+25行）
+- **代码量**: +180/+25/-60 行
+- **背景**: 5B source-graded meta 建立后，TTL 仍用 6 类关键词分类（无法区分"用户亲口说"vs"LLM推理"、无时间衰减加权）。5C 构建独立置信度引擎——不止用于 memory TTL，后续可接入画像门控、深思筛选、告警评级等场景。fact_type 三分类（constant/mutable/transient）直接对应 arxiv 2604.11364 四层持久化语义。方案经四家第十人审计（内部+DS+Qwen+火山），25+3 全自动测试通过，dry-run 145条全保留。
+- **关联**: P052（5B source-graded meta）、governance-decay-guardian
+- **session**: 20260713_133000
