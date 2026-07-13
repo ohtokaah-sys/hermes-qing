@@ -140,7 +140,7 @@ apply 命令：
 **文件**：`tools/file_tools.py`（~360行新增）、`cron/jobs.py`（`save_job_output` 集成）
 **原因**：
   - SOUL.md 的 Self-check 规则要求产出含特定标记（🟡假设/📋审阅指南/🔴🟡🟢⚪置信度），但 Agent 经常遗漏——执法者与违规者是同一个 LLM
-  - NAS 路径污染：产出中混入 `/mnt/nas/*` 路径，违反 SOUL.md §2
+  - NAS 路径污染：产出中混入 `/mnt/storage/*` 路径，违反 SOUL.md §2
   - 文件名含 emoji/Windows 保留字符，NAS SMB 静默失败
   - 预防式阻断 > 事后检测
 **设计原则**（用户明确）：
@@ -161,10 +161,10 @@ apply 命令：
 ### session_vectorize.py
 **路径**：`~/.hermes/scripts/session_vectorize.py`
 **说明**：此文件在 git repo 外（`~/.hermes/scripts/`），`hermes update` 不会覆盖。但全量重建或换机器时需手动迁移。
-**restic 日备**：已覆盖（`~/.hermes/scripts/` 在备份路径内）。
+**加密增量备份**：已覆盖（`~/.hermes/scripts/` 在备份路径内）。
 **最后修改**：2026-06-07 —— 新增 `_make_chunk`、`chunk_api_server_sessions`，`incremental_update` 移除早期 return，`full_build` 加入 api_server 处理。
 
-🟡 假设：此产出由常青自动生成，未经用户手动标注假设。
+🟡 假设：此产出由Agent自动生成，未经用户手动标注假设。
 
 ---
 
@@ -211,11 +211,11 @@ session_reset:
 
 **类型**：源码补丁 + 配置
 
-**问题**：ADR-0006 合规检查对 SOUL.md/MEMORY.md 等政策文件中的**禁止性 NAS 引用**（"不要用 /mnt/nas"）产生误报，每次文件修改都在文件头追加"合规警告"冗余行。Agent 每轮读到"此文件存在无法修补的问题"会削弱对系统提示的信任。
+**问题**：ADR-0006 合规检查对 SOUL.md/MEMORY.md 等政策文件中的**禁止性 NAS 引用**（"不要用 /mnt/storage"）产生误报，每次文件修改都在文件头追加"合规警告"冗余行。Agent 每轮读到"此文件存在无法修补的问题"会削弱对系统提示的信任。
 
 **修复**：
 1. `tools/file_tools.py` `_check_content_compliance()`：新增 `skip_paths` 白名单检查（3 行）
-2. `write_guard.yaml`：新增 `skip_paths: [/home/USER/.hermes/memories/]`
+2. `write_guard.yaml`：新增 `skip_paths: [~/.hermes/memories/]`
 
 **生效**：需重启 gateway。
 
@@ -261,7 +261,7 @@ P010 更新（2026-06-16）：规则级白名单替代文件级白名单。
 **回滚**：恢复原 import 行 + 重启 gateway。
 **验证**：`grep -c "except ImportError" tools/file_tools.py`
 **断言**：>= 1
-**发现者**：常青（笔记本），2026-06-18
+**发现者**：Agent（笔记本），2026-06-18
 
 ---
 
@@ -276,7 +276,7 @@ P010 更新（2026-06-16）：规则级白名单替代文件级白名单。
 **修复**：
   1. `write_guard.yaml` 新增 `skip_for_paths` 列表（排除 `~/.hermes/cron/`、`cache/`、`logs/`、`state/`、`tmp/`）
   2. `_check_content_compliance()` 在扩展名过滤**前**检查路径——命中 `skip_for_paths` 则跳过全部注入
-**影响面**：cron 产出洁净 ✅、用户交付文件（hermes-local/、kaah/）仍自动标注 ✅。2026-07-03 升级后 `_check_content_compliance()` 中顶层 `skip_for_paths` 检查缺失，手动补回 3 行。
+**影响面**：cron 产出洁净 ✅、用户交付文件（hermes-local/、kb/）仍自动标注 ✅。2026-07-03 升级后 `_check_content_compliance()` 中顶层 `skip_for_paths` 检查缺失，手动补回 3 行。
 **回滚**：删除 `skip_for_paths` + 移除 `_check_content_compliance` 中新增的路径检查块 + 重启 gateway
 **验证**：`grep -c "skip_for_paths" ~/.hermes/write_guard.yaml`
 **断言**：>= 1
@@ -383,7 +383,7 @@ P021 的诊断是错误的。`base.py` 的 `extract_media()` 用 `MEDIA_DELIVERY
 3. 投递循环：失败后等 2s 重试一次；两次都失败记 `logger.error`
 
 **影响**：2026-07-03 升级确认：weixin.py 中 SendResult.success 检查 + 2s 重试 + logger.error 全部存在。✅ 无需重新 apply。
-**回滚**：见 ADR `kaah/决策记录/ADR_2026-07-03_MEDIA静默失败.md`
+**回滚**：见 ADR `kb/决策记录/ADR_2026-07-03_MEDIA静默失败.md`
 
 ---
 
@@ -487,7 +487,7 @@ P021 的诊断是错误的。`base.py` 的 `extract_media()` 用 `MEDIA_DELIVERY
 - **代码量**: +50/-5 行（含 TTL 日期注入、MEMORY_SUMMARY.md 注入、read action）
 - **背景**: Hermes 记忆架构原只有写路径（add/replace/remove），读由 system prompt 注入完成。5K 摘要渐进式披露打破了此假设——需要按需拉取全量的路径。
 - **关联**: T46（摘要注入）+ T47（按需拉取）= 渐进式披露完整链路
-- **ADR**: `kaah/决策记录/ADR_2026-07-08_memory_read_渐进式披露工具链.md`
+- **ADR**: `kb/决策记录/ADR_2026-07-08_memory_read_渐进式披露工具链.md`
 - **回滚**: 恢复 `memory_tool.py.bak.20260708085216`
 
 ## P029 — l0-safety-guard 引用确认 + pre_llm_call hook（2026-07-10）
@@ -532,3 +532,16 @@ P021 的诊断是错误的。`base.py` 的 `extract_media()` 用 `MEDIA_DELIVERY
 - **背景**: 5B source-graded meta 建立后，TTL 仍用 6 类关键词分类（无法区分"用户亲口说"vs"LLM推理"、无时间衰减加权）。5C 构建独立置信度引擎——不止用于 memory TTL，后续可接入画像门控、深思筛选、告警评级等场景。fact_type 三分类（constant/mutable/transient）直接对应 arxiv 2604.11364 四层持久化语义。方案经四家第十人审计（内部+DS+Qwen+火山），25+3 全自动测试通过，dry-run 145条全保留。
 - **关联**: P052（5B source-graded meta）、governance-decay-guardian
 - **session**: 20260713_133000
+
+## P056 — Git Push 前隐私扫描强制门控（2026-07-13）
+
+- **文件**: `pre_push_privacy_check.sh`, `.git/hooks/pre-push`（两个仓库）, `clean_public_repo.sh`
+- **改动**:
+  1. pre_push_privacy_check.sh（45行）——39条正则规则覆盖凭据/人名/主机名/组织/路径/邮箱/手机号
+  2. 两个仓库安装 git pre-push hook → git push 自动触发扫描，PASS 放行，FAIL 阻断
+  3. clean_public_repo.sh（39条 sed 替换规则）
+  4. 完整清洗公开仓库：HOST_MAIN, 协作者A, 用户, GROUP, 某外企, 某科技企业 等
+- **代码量**: +100/-90 行
+- **背景**: 特性注册表未清洗即推送。策略：线上公开仓库→无隐私，本地生产版本→完整。防线：①SOUL.md Rule 18 ②git pre-push hook ③事后 cron 审计（待建）。
+- **关联**: agent-privacy-release-audit skill, P055
+- **session**: `20260713_174500`
